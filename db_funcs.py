@@ -1,3 +1,4 @@
+import datetime
 import sqlite3
 import os
 from dotenv import load_dotenv, find_dotenv
@@ -57,7 +58,7 @@ def get_accounts_db(tgm_user_id):
         cur = con.cursor()
 
         cur.execute(
-            f'select a.acc_name || " - активен с " || ulu.active_from || " до " || ifnull(ulu.active_to, "") as acc \
+            f'select a.acc_name || " - активен с " || ulu.active_from || " до " || ifnull(ulu.active_to, "-") as acc \
             from users_link_telegram_users utu \
                     join users u using(user_id) \
                     join users_link_accounts ulu using(user_id) \
@@ -104,6 +105,179 @@ def get_deals_db(tgm_user_id, start=0):
         records = cur.fetchall()
         deals = '\n'.join([rec['deal'] for rec in records])
         return deals
+
+    except sqlite3.Error as e:
+        print(str(e))
+    finally:
+        if con:
+            con.close()
+
+
+def get_cash_db(tgm_user_id, for_date='null'):
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        cur.execute(
+            f'select a.acc_name || ": " || t.sum || " ₽" as sum\
+                from (select ulu.acc_id, round(sum(act.value), 2) as sum\
+                        from users_link_telegram_users utu\
+                                join users u using(user_id)\
+                                join users_link_accounts ulu using(user_id)\
+                                join actions act using(acc_id)\
+                        where utu.tgm_user_id = {tgm_user_id}\
+                        and utu.active_to is null\
+                        and u.active_to is null\
+                        and act.act_date  <= ifnull({for_date}, current_date)\
+                        group by ulu.acc_id) as t\
+                    join accounts a using(acc_id)\
+                order by a.acc_id')
+
+        records = cur.fetchall()
+        cash = '\n'.join([rec['sum'] for rec in records])
+        return cash
+
+    except sqlite3.Error as e:
+        print(str(e))
+    finally:
+        if con:
+            con.close()
+
+
+def get_refills_db(tgm_user_id):
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        cur.execute(
+            f'select t.year|| " г. " || a.acc_name || ": " || t.sum || " ₽" as sum\
+                from (select ulu.acc_id, strftime("%Y", act.act_date) as year, round(sum(act.value), 2) as sum\
+                        from users_link_telegram_users utu\
+                                join users u using(user_id)\
+                                join users_link_accounts ulu using(user_id)\
+                                join actions act using(acc_id)\
+                        where utu.tgm_user_id = {tgm_user_id}\
+                        and utu.active_to is null\
+                        and u.active_to is null\
+                        and act.act_type_id = 1\
+                        group by ulu.acc_id, strftime("%Y", act.act_date)) as t\
+                    join accounts a using(acc_id)\
+                UNION ALL\
+                select "Всего: " || round(sum(act.value), 2) || " ₽" as sum\
+                from users_link_telegram_users utu\
+                        join users u using(user_id)\
+                        join users_link_accounts ulu using(user_id)\
+                        join actions act using(acc_id)\
+                where utu.tgm_user_id = {tgm_user_id}\
+                and utu.active_to is null\
+                and u.active_to is null\
+                and act.act_type_id = 1')
+
+        records = cur.fetchall()
+        refills = '\n'.join([rec['sum'] for rec in records])
+        return refills
+
+    except sqlite3.Error as e:
+        print(str(e))
+    finally:
+        if con:
+            con.close()
+
+
+def get_analytics_db(tgm_user_id, is_simple=True, for_date='null', ticket='null'):
+    try:
+        con = sqlite3.connect(DB_PATH)
+        con.row_factory = sqlite3.Row
+        cur = con.cursor()
+
+        cur.execute(f'select user_id\
+                    from users_link_telegram_users utu\
+                    join users u using(user_id)\
+                    where tgm_user_id = {tgm_user_id}\
+                    and utu.active_to is null\
+                    and u.active_to is null')
+
+        user_id = cur.fetchone()['user_id']
+
+        cur.execute(
+            f'with sec_hist as (select user_id, isin, ticket, ifnull({for_date}, current_date) as sec_date, balance_amount\
+                                                ,case when balance_amount!=0\
+                                                    then round(balance_cost, 2)\
+                                                    else 0\
+                                                    end as balance_cost\
+                                                ,round(ifnull(balance_cost/balance_amount, 0)\
+                                                                , (select decimals from security_properties where active_to is null and isin = sec.isin)) as avg_price_rounded\
+                                                ,row_number() over (partition by user_id, ticket order by deal_date desc) as num\
+                                        from (select ula.user_id, d.isin, sp.ticket, d.deal_date\
+                                                    ,sum(sum(d.amount)) over (partition by ula.user_id, d.isin order by d.deal_date) as balance_amount\
+                                                    ,sum( /*сумма по дням*/\
+                                                        sum( /*сумма внутри дня*/\
+                                                            d.amount*d.price - case when d.deal_type = "sell"\
+                                                                                    then d.amount* (d.price - (select avg_price\
+                                                                                                                from securities_history\
+                                                                                                                where acc_id = d.acc_id\
+                                                                                                                and isin = d.isin\
+                                                                                                                and deal_type = "buy"\
+                                                                                                                and balance_amount > 0\
+                                                                                                                and sec_date < d.deal_date\
+                                                                                                                order by sec_date desc\
+                                                                                                                limit 1)\
+                                                                                                    )\
+                                                                                    else 0\
+                                                                                    end\
+                                                            )\
+                                                        ) 	over (partition by ula.user_id, d.isin order by d.deal_date) as balance_cost\
+                                                from deals d join security_properties sp using(isin)\
+                                                     join users_link_accounts ula using(acc_id)\
+                                                where sp.active_to is null\
+                                                and d.deal_date <= ifnull({for_date}, current_date)\
+                                                and ula.user_id = {user_id}\
+                                                and (ticket = {ticket} or {ticket} is null)\
+                                                group by ula.user_id, d.isin, sp.ticket, d.deal_type, d.deal_date) sec)\
+                    ,prices as (select pr.*\
+                                        ,row_number() over (partition by isin order by price_date desc) as num\
+                                from (select isin, price_close + ifnull(nkd, 0) as curr_price, ifnull({for_date}, current_date) as price_date\
+                                        from security_prices p\
+                                        where price_date <= ifnull({for_date}, current_date)\
+                                        and price_date >= ifnull(date({for_date}, "-20 day"), date("now", "-20 day"))\
+                                        union all\
+                                        select * from current_security_prices\
+                                        where price_date <= ifnull({for_date}, datetime("now", "localtime"))) pr)\
+                    select ticket, avg_price_rounded\
+                          ,curr_price\
+                          ,balance_cost\
+                          ,round(balance_amount*curr_price, 2) as curr_cost\
+                          ,round(balance_amount*curr_price - balance_cost, 2) as sec_profit\
+                          ,round(100 * (balance_amount*curr_price - balance_cost) / balance_cost, 2) as sec_profit_perc\
+                          ,sum(balance_cost) over (partition by user_id) as sum_cost\
+                          ,sum(round(balance_amount*curr_price, 2)) over (partition by user_id) as curr_sum_cost\
+                          ,sum(round(balance_amount*curr_price - balance_cost, 2)) over (partition by user_id) as sum_profit\
+                          ,round(100 * sum(balance_amount*curr_price - balance_cost) over (partition by user_id) / sum(balance_cost) over (partition by user_id), 2) as sum_profit_perc\
+                    from sec_hist sh, prices pr\
+                    where sh.isin = pr.isin\
+                    and sh.num = 1\
+                    and pr.num = 1\
+                    and balance_amount != 0\
+                    order by sec_profit_perc desc')
+
+        records = cur.fetchall()
+
+        sum_profit = round(records[0]['sum_profit'], 2)
+        sum_profit_perc = records[0]['sum_profit_perc']
+
+        if is_simple:
+            tickets = '\n'.join([rec['ticket'] + ' (' + str(rec['sec_profit_perc']) + '%)' for rec in records])
+        else:
+            tickets = '\n\n'.join([rec['ticket']
+                                   +' ('+str(rec['sec_profit_perc'])+'%)'
+                                   +'\nцена: '+str(rec['avg_price_rounded'])+' -> '+str(rec['curr_price'])
+                                   +'\nстоимость: '+str(rec['balance_cost'])+' -> '+str(rec['curr_cost'])
+
+                                   for rec in records])
+
+        return tickets + '\n\n----' + '\nИтого: ' + str(sum_profit) + ' (' + str(sum_profit_perc) + '%)'
 
     except sqlite3.Error as e:
         print(str(e))

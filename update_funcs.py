@@ -408,5 +408,5 @@ def fill_current_security_prices():
 
 def start_update():
     while True:
-        fill_current_security_prices();
+        fill_current_security_prices()
         time.sleep(15)

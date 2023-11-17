@@ -29,7 +29,7 @@ def get_accounts_keyboard():
     return keyboard_builder.as_markup(resize_keyboard=True)
 
 
-def get_money_keyboard():
+def get_cash_keyboard():
     keyboard_builder = ReplyKeyboardBuilder()
 
     keyboard_builder.button(text='удалить')
@@ -62,8 +62,8 @@ def get_deals_keyboard():
 def get_analytics_keyboard():
     keyboard_builder = ReplyKeyboardBuilder()
 
-    keyboard_builder.button(text='назад')
-    keyboard_builder.button(text='вперед')
+    keyboard_builder.button(text='бумаги за весь период')
+    keyboard_builder.button(text='бумаги за весь период (подробно)')
     keyboard_builder.button(text='главное меню')
 
     # расположение кнопок
