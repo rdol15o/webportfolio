@@ -2,7 +2,8 @@
 import logging
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command, Text
-from bot_core.handlers.basic import start_msg, get_main_menu, get_accounts, get_cash, get_deals, get_analytics_menu, get_analytics_total_simple, get_analytics_total
+from bot_core.handlers.basic import start_msg, get_main_menu, get_accounts, get_cash, get_deals, get_analytics_menu, \
+    get_analytics_total_simple, get_analytics_total, get_analytics_daily_simple
 from bot_core.utils.commands import set_commands
 from bot_core.keyboards.reply import get_main_keyboard
 import asyncio
@@ -42,6 +43,7 @@ async def start_bot():
     dp.message.register(get_analytics_menu, Text(text='аналитика'))
     dp.message.register(get_analytics_total_simple, Text(text='бумаги за весь период'))
     dp.message.register(get_analytics_total, Text(text='бумаги за весь период (подробно)'))
+    dp.message.register(get_analytics_daily_simple, Text(text='бумаги за сегодня'))
 
     try:
         await dp.start_polling(bot, skip_updates=True)

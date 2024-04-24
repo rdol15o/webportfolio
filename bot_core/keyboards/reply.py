@@ -64,9 +64,10 @@ def get_analytics_keyboard():
 
     keyboard_builder.button(text='бумаги за весь период')
     keyboard_builder.button(text='бумаги за весь период (подробно)')
+    keyboard_builder.button(text='бумаги за сегодня')
     keyboard_builder.button(text='главное меню')
 
     # расположение кнопок
-    keyboard_builder.adjust(2, 1)
+    keyboard_builder.adjust(2, 1, 1)
 
     return keyboard_builder.as_markup(resize_keyboard=True)

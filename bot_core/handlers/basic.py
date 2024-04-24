@@ -1,5 +1,6 @@
 from aiogram import Bot, types
-from db_funcs import add_user_db, get_accounts_db, get_deals_db, get_cash_db, get_refills_db, get_analytics_db
+from db_funcs import add_user_db, get_accounts_db, get_deals_db, get_cash_db, get_refills_db, \
+    get_analytics_total_db, get_analytics_daily_db
 from bot_core.keyboards.reply import get_main_keyboard, get_accounts_keyboard, get_cash_keyboard, get_analytics_keyboard, get_deals_keyboard
 
 
@@ -57,7 +58,7 @@ async def get_analytics_menu(message: types.Message, bot: Bot):
 async def get_analytics_total_simple(message: types.Message, bot: Bot):
     msg = 'Изменение бумаг:\n'
     msg += '<pre>'
-    msg += get_analytics_db(tgm_user_id=message.from_user.id, is_simple=True)
+    msg += get_analytics_total_db(tgm_user_id=message.from_user.id, is_simple=True)
     msg += '</pre>'
     await bot.send_message(chat_id=message.from_user.id,
                            text=msg,
@@ -67,7 +68,17 @@ async def get_analytics_total_simple(message: types.Message, bot: Bot):
 async def get_analytics_total(message: types.Message, bot: Bot):
     msg = 'Изменение бумаг:\n'
     msg += '<pre>'
-    msg += get_analytics_db(tgm_user_id=message.from_user.id, is_simple=False)
+    msg += get_analytics_total_db(tgm_user_id=message.from_user.id, is_simple=False)
+    msg += '</pre>'
+    await bot.send_message(chat_id=message.from_user.id,
+                           text=msg,
+                           reply_markup=get_main_keyboard())
+
+
+async def get_analytics_daily_simple(message: types.Message, bot: Bot):
+    msg = 'Изменение бумаг за день:\n'
+    msg += '<pre>'
+    msg += get_analytics_daily_db(tgm_user_id=message.from_user.id, is_simple=True)
     msg += '</pre>'
     await bot.send_message(chat_id=message.from_user.id,
                            text=msg,
